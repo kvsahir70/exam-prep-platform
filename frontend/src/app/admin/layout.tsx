@@ -1,5 +1,5 @@
-import { AppShell } from "@/components/AppShell";
+import { ElevateShell } from "@/components/ElevateShell";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
-  return <AppShell admin>{children}</AppShell>;
+  return <ElevateShell admin>{children}</ElevateShell>;
 }

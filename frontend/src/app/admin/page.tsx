@@ -1,10 +1,10 @@
 "use client";
 
 import clsx from "clsx";
-import { AlertTriangle, CheckCircle2, FileText, Loader2, Plus, UploadCloud, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Eraser, FileText, Loader2, Plus, UploadCloud, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { Badge, Button, Card, EmptyState, ErrorNote, Field, Input, PageHeader, ProgressBar, Reveal, Select, Skeleton } from "@/components/ui";
 import { api, type DocumentInfo, type Exam } from "@/lib/api";
@@ -209,9 +209,71 @@ function UploadPanel({
   );
 }
 
+/**
+ * Clearing hides a document from this list only — it is never deleted. Deleting
+ * would cascade into the document's questions, any test built from them and
+ * students' PYQ progress, so this keeps to the list. Cleared ids are remembered
+ * per browser; anything uploaded later is not in the set, so new uploads still
+ * appear here on their own.
+ */
+const CLEARED_KEY = "examforge.clearedDocuments";
+
+// A tiny external store, so the value is read during render rather than set from
+// an effect, and the server snapshot ("nothing cleared") stays hydration-safe.
+let clearedListeners: (() => void)[] = [];
+function subscribeCleared(onChange: () => void) {
+  clearedListeners.push(onChange);
+  return () => {
+    clearedListeners = clearedListeners.filter((l) => l !== onChange);
+  };
+}
+
+const EMPTY = "[]";
+let cachedRaw = EMPTY;
+let cachedIds: number[] = [];
+
+/** Returns a stable array reference, which useSyncExternalStore requires. */
+function readClearedIds(): number[] {
+  let raw = EMPTY;
+  try {
+    raw = localStorage.getItem(CLEARED_KEY) ?? EMPTY;
+  } catch {
+    /* storage unavailable (private mode) */
+  }
+  if (raw !== cachedRaw) {
+    cachedRaw = raw;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      cachedIds = Array.isArray(parsed) ? parsed.filter((n): n is number => typeof n === "number") : [];
+    } catch {
+      cachedIds = [];
+    }
+  }
+  return cachedIds;
+}
+
+function writeClearedIds(ids: number[]) {
+  try {
+    localStorage.setItem(CLEARED_KEY, JSON.stringify([...new Set(ids)]));
+  } catch {
+    /* storage unavailable — the list still clears for this session */
+  }
+  clearedListeners.forEach((l) => l());
+}
+
+const SERVER_IDS: number[] = [];
+
 export default function AdminPage() {
   const { data: docs, loading, reload } = useApi<DocumentInfo[]>("/api/documents");
   const { data: exams, reload: reloadExams } = useApi<Exam[]>("/api/exams");
+  const clearedIds = useSyncExternalStore(subscribeCleared, readClearedIds, () => SERVER_IDS);
+  const cleared = new Set(clearedIds);
+
+  const clearOne = (id: number) => writeClearedIds([...clearedIds, id]);
+  const clearList = () => writeClearedIds([...clearedIds, ...(docs ?? []).map((d) => d.id)]);
+
+  const visibleDocs = docs?.filter((d) => !cleared.has(d.id));
+  const hiddenCount = (docs?.length ?? 0) - (visibleDocs?.length ?? 0);
 
   const active = docs?.some((d) => d.latest_job && ["queued", "running"].includes(d.latest_job.status));
   const paperTitle = (id: number | null) => docs?.find((d) => d.id === id)?.title;
@@ -233,66 +295,93 @@ export default function AdminPage() {
             onExamCreated={reloadExams}
           />
         </Reveal>
-        <Reveal delay={0.05}>
+        <Reveal delay={0.05} className="min-w-0">
           <Card className="p-6">
-            <h2 className="mb-4 font-semibold">Documents</h2>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 className="font-semibold">Documents</h2>
+              <div className="flex items-center gap-3">
+                {!!visibleDocs?.length && (
+                  <button
+                    onClick={clearList}
+                    className="i-lift inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-muted hover:text-fg"
+                  >
+                    <Eraser className="h-3.5 w-3.5" /> Clear
+                  </button>
+                )}
+              </div>
+            </div>
             {loading && !docs ? (
               <div className="space-y-3">
                 {[0, 1, 2].map((i) => (
                   <Skeleton key={i} className="h-16" />
                 ))}
               </div>
-            ) : docs?.length ? (
+            ) : visibleDocs?.length ? (
               <ul className="space-y-2">
-                {docs.map((d) => {
+                {visibleDocs.map((d) => {
                   const job = d.latest_job;
                   const total = Object.entries(d.question_counts)
                     .filter(([k]) => k !== "flagged")
                     .reduce((a, [, v]) => a + v, 0);
                   return (
-                    <li key={d.id}>
-                      <Link href={`/admin/documents/${d.id}`} className="block rounded-xl border border-line p-4 transition hover:border-brand/40 hover:bg-sunken">
-                        <div className="flex items-start gap-3">
-                          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-soft text-brand">
-                            <FileText className="h-5 w-5" />
+                    <li
+                      key={d.id}
+                      className="flex items-start gap-3 rounded-xl border border-line p-4 transition hover:border-brand/40 hover:bg-sunken"
+                    >
+                      <Link href={`/admin/documents/${d.id}`} className="flex min-w-0 flex-1 items-start gap-3">
+                        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-soft text-brand">
+                          <FileText className="h-5 w-5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="min-w-0 truncate font-medium">{d.title}</p>
+                            <Badge tone={d.kind === "pyq" ? "warning" : d.kind === "solutions" ? "brand" : "neutral"}>
+                              {d.kind === "pyq" ? "PYQ" : d.kind === "solutions" ? "Solutions" : "Test series"}
+                            </Badge>
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="truncate font-medium">{d.title}</p>
-                              <Badge tone={d.kind === "pyq" ? "warning" : d.kind === "solutions" ? "brand" : "neutral"}>
-                                {d.kind === "pyq" ? "PYQ" : d.kind === "solutions" ? "Solutions" : "Test series"}
-                              </Badge>
+                          <p className="mt-0.5 text-xs text-subtle">
+                            {[d.exam?.name, d.institution?.name, d.year, `${d.page_count} pages`, formatDate(d.created_at)].filter(Boolean).join(" · ")}
+                          </p>
+                          {job && ["queued", "running"].includes(job.status) && (
+                            <div className="mt-3">
+                              <ProgressBar value={job.progress * 100} />
                             </div>
-                            <p className="mt-0.5 text-xs text-subtle">
-                              {[d.exam?.name, d.institution?.name, d.year, `${d.page_count} pages`, formatDate(d.created_at)].filter(Boolean).join(" · ")}
+                          )}
+                          {job?.status === "completed" && d.kind === "solutions" && (
+                            <p className="mt-2 text-xs text-muted">
+                              {d.answer_key_entries ?? 0} answers &amp; explanations ·{" "}
+                              {paperTitle(d.solutions_for_id) ? <>for {paperTitle(d.solutions_for_id)}</> : "no paper linked"}
                             </p>
-                            {job && ["queued", "running"].includes(job.status) && (
-                              <div className="mt-3">
-                                <ProgressBar value={job.progress * 100} />
-                              </div>
-                            )}
-                            {job?.status === "completed" && d.kind === "solutions" && (
-                              <p className="mt-2 text-xs text-muted">
-                                {d.answer_key_entries ?? 0} answers &amp; explanations ·{" "}
-                                {paperTitle(d.solutions_for_id) ? <>for {paperTitle(d.solutions_for_id)}</> : "no paper linked"}
-                              </p>
-                            )}
-                            {job?.status === "completed" && d.kind !== "solutions" && (
-                              <p className="mt-2 text-xs text-muted">
-                                {total} questions · <span className="text-success">{d.question_counts.approved ?? 0} published</span> ·{" "}
-                                <span className="text-warning">{d.question_counts.flagged ?? 0} to check</span>
-                                {d.solutions.length > 0 && <> · {d.solutions.length} solutions PDF</>}
-                              </p>
-                            )}
-                            {job?.status === "failed" && <p className="mt-2 line-clamp-1 text-xs text-danger">{job.error}</p>}
-                          </div>
-                          <JobBadge doc={d} />
+                          )}
+                          {job?.status === "completed" && d.kind !== "solutions" && (
+                            <p className="mt-2 text-xs text-muted">
+                              {total} questions · <span className="text-success">{d.question_counts.approved ?? 0} published</span> ·{" "}
+                              <span className="text-warning">{d.question_counts.flagged ?? 0} to check</span>
+                              {d.solutions.length > 0 && <> · {d.solutions.length} solutions PDF</>}
+                            </p>
+                          )}
+                          {job?.status === "failed" && <p className="mt-2 line-clamp-1 text-xs text-danger">{job.error}</p>}
                         </div>
                       </Link>
+                      <JobBadge doc={d} />
+                      <button
+                        onClick={() => clearOne(d.id)}
+                        title="Clear from this list"
+                        aria-label={`Clear ${d.title} from this list`}
+                        className="-mr-1 -mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-lg text-subtle opacity-60 transition hover:bg-danger-soft hover:text-danger hover:opacity-100 focus-visible:opacity-100"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
                     </li>
                   );
                 })}
               </ul>
+            ) : hiddenCount > 0 ? (
+              <EmptyState
+                icon={<Eraser className="h-5 w-5" />}
+                title="List cleared"
+                body={`${hiddenCount} document${hiddenCount === 1 ? "" : "s"} cleared from this list. Nothing was deleted — new uploads appear here.`}
+              />
             ) : (
               <EmptyState icon={<UploadCloud className="h-5 w-5" />} title="No documents yet" body="Upload your first test series or PYQ PDF." />
             )}

@@ -127,6 +127,51 @@ body {
   overflow-y: hidden;
 }
 
+/* ---------------------------------------------------------------------------
+   Motion model copied from the reference dashboard.
+
+   Entrance: the content area rises once per route (0.55s), rather than each
+   card fading in as it scrolls into view. Interaction: a flat 200ms ease on a
+   small set of affordances — nav rows slide, buttons and the dropzone lift,
+   table rows tint. Everything here is disabled by the reduced-motion block
+   further down.
+   --------------------------------------------------------------------------- */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-rise {
+  animation: 0.55s cubic-bezier(0.22, 1, 0.36, 1) both rise;
+}
+
+.i-nav,
+.i-lift,
+.i-row,
+.i-drop {
+  transition: all 0.2s;
+}
+.i-nav:hover {
+  transform: translateX(2px);
+}
+.i-lift:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 7px 16px color-mix(in oklab, var(--brand) 25%, transparent);
+}
+.i-row:hover {
+  background: color-mix(in oklab, var(--brand) 4%, transparent);
+}
+.i-drop:hover {
+  transform: translateY(-1px);
+  border-color: var(--brand);
+  background: color-mix(in oklab, var(--brand-soft) 60%, transparent);
+}
+
 @keyframes shimmer {
   100% {
     transform: translateX(100%);

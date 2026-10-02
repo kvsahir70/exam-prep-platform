@@ -264,10 +264,42 @@ export interface PyqStats {
   accuracy: number;
   by_subject: { subject: string; total: number; solved: number; correct: number }[];
 }
+export interface ContinueTest {
+  attempt_id: number;
+  test_id: number;
+  test_title: string;
+  sections: string[];
+  question_count: number;
+  answered: number;
+  seconds_left: number;
+  expired: boolean;
+  started_at: string;
+}
 export interface Dashboard {
   user: { name: string };
-  totals: { tests_taken: number; avg_percent: number; best_percent: number; accuracy: number; hours_practiced: number };
-  trend: { attempt_id: number; test_title: string; date: string; score: number; max_score: number; percent: number; accuracy: number }[];
+  totals: {
+    tests_taken: number;
+    avg_percent: number;
+    best_percent: number;
+    accuracy: number;
+    hours_practiced: number;
+    tests_this_week: number;
+    hours_this_week: number;
+    avg_delta_30d: number | null;
+  };
+  streak: { current: number; best: number };
+  activity: { start: string; days: { date: string; tests: number; minutes: number }[] };
+  continue_test: ContinueTest | null;
+  trend: {
+    attempt_id: number;
+    test_title: string;
+    date: string;
+    score: number;
+    max_score: number;
+    percent: number;
+    accuracy: number;
+    sections: string[];
+  }[];
   sections: { name: string; correct: number; incorrect: number; unattempted: number; time_seconds: number; accuracy: number }[];
   weak_areas: string[];
   recent: Dashboard["trend"];
