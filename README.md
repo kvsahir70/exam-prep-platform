@@ -63,12 +63,15 @@ docker compose up --build              # db + api + 2 extraction workers + web
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design. In short:
 
-1. **Render**: PyMuPDF renders every page to PNG and reads the native text layer (empty for scans).
+1. **Slice**: PyMuPDF cuts the PDF into one-page PDFs (vectors and fonts intact, annotations dropped).
+   The native text layer is read too, but only for the printed-answer-key parser and offline mode.
 2. **Profile**: Gemini looks at the first pages plus samples and describes the *format*: sections and
    their question ranges, numbering/option style, columns, where answers live, marking scheme.
-3. **Extract**: pages are sent in small windows (default 2 pages + 1 lookahead page) in parallel. Each
-   call gets page images (authoritative for layout/math) and the text layer (exact characters), and must
-   return JSON matching a strict schema (`app/extraction/schemas.py`).
+3. **Extract**: pages are sent in small windows (default 2 pages + 1 lookahead page) in parallel, each
+   page as a native one-page PDF, so Gemini runs its own layout pass over the real page instead of a
+   raster. No text layer is sent: a column-interleaved one misleads the model about which options
+   belong to which stem. Each call must return JSON matching a strict schema
+   (`app/extraction/schemas.py`).
 4. **Merge**: windows are stitched: continuation fragments are joined, duplicates from overlapping
    windows merged, sections carried forward, answer keys joined to questions (including keys whose
    numbering restarts per section).

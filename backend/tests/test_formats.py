@@ -14,7 +14,7 @@ import pytest
 from app.extraction.keys import parse_answer_text
 from app.extraction.labels import clean_label, normalize_answer
 from app.extraction.merge import ChunkResult, merge_chunks
-from app.extraction.pdf import render_pages
+from app.extraction.pdf import load_pages
 from app.extraction.pipeline import extract_solutions_document
 from app.extraction.schemas import AnswerKeyEntry, ChunkExtraction, DocumentProfile, ExtractedQuestion
 from app.worker import claim_next, process
@@ -116,7 +116,7 @@ PAPER = [
 
 # --- page text ------------------------------------------------------------------------------
 def test_two_column_reading_order_and_running_headers(tmp_path):
-    pages = render_pages(make_paper(tmp_path / "p.pdf", PAPER), 40)
+    pages = load_pages(make_paper(tmp_path / "p.pdf", PAPER))
     text = pages[1].text
     # Left column fully before the right column, lines not interleaved.
     assert text.index("D. Hydrogen") < text.index("3. Select the correct match:")
@@ -129,8 +129,21 @@ def test_two_column_reading_order_and_running_headers(tmp_path):
 
 def test_repeated_option_lines_at_page_bottom_are_never_stripped(tmp_path):
     spec = [{"lines": [f"{n}. Question {n} text here?"] + [""] * 46 + ["(d) 1, 2 and 3"]} for n in range(1, 5)]
-    pages = render_pages(make_paper(tmp_path / "p.pdf", spec, header=None, footer=False), 40)
+    pages = load_pages(make_paper(tmp_path / "p.pdf", spec, header=None, footer=False))
     assert all(p.text.endswith("(d) 1, 2 and 3") for p in pages)
+
+
+def test_pages_are_sent_as_one_page_pdfs(tmp_path):
+    """Each page goes to the model as a standalone PDF of exactly that page, text layer intact."""
+    pages = load_pages(make_paper(tmp_path / "p.pdf", PAPER))
+    for page in pages:
+        assert page.pdf.startswith(b"%PDF")
+        with pymupdf.open(stream=page.pdf, filetype="pdf") as slice_:
+            assert slice_.page_count == 1
+            # The vectors survive the cut, so the model reads the real page, not a raster of it.
+            assert slice_[0].get_text().strip()
+    with pymupdf.open(stream=pages[1].pdf, filetype="pdf") as slice_:
+        assert "Hydrogen" in slice_[0].get_text()
 
 
 def test_scanned_page_is_detected(tmp_path):
@@ -141,7 +154,7 @@ def test_scanned_page_is_detected(tmp_path):
     page.insert_image(page.rect, stream=png)  # a scan: the whole page is one picture
     _write(page, 50, 40, "Scanned by CamScanner on the 2nd of October")  # but a little real text
     doc.save(tmp_path / "scan.pdf")
-    (scan,) = render_pages(tmp_path / "scan.pdf", 40)
+    (scan,) = load_pages(tmp_path / "scan.pdf")
     assert scan.text_incomplete and scan.text_coverage < 0.5
 
 

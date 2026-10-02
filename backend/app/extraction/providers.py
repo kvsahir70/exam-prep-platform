@@ -55,9 +55,9 @@ class ExtractionProvider(Protocol):
 
 
 def _legend(primary: list[PageContent], lookahead: PageContent | None) -> str:
-    lines = [f"- image {i}: PRIMARY page {p.index + 1}" for i, p in enumerate(primary)]
+    lines = [f"- document {i}: PRIMARY page {p.index + 1}" for i, p in enumerate(primary)]
     if lookahead is not None:
-        lines.append(f"- image {len(primary)}: LOOKAHEAD page {lookahead.index + 1} (context only)")
+        lines.append(f"- document {len(primary)}: LOOKAHEAD page {lookahead.index + 1} (context only)")
     return "\n".join(lines)
 
 
@@ -88,20 +88,19 @@ class GeminiProvider:
         self.calls = 0
 
     # -- low level -----------------------------------------------------------------
-    def _parts(self, pages: list[PageContent], include_text: bool = True) -> list:
+    def _parts(self, pages: list[PageContent]) -> list:
+        """One `application/pdf` part per page, labelled so `page_offset` in the schema still lines up.
+
+        Each page goes as its own one-page PDF rather than one merged slice, because the extraction
+        schema addresses pages by their position in this list (`page_offset`, and a figure's `box_2d` is
+        relative to its own page). The text layer is deliberately not sent: a garbled or
+        column-interleaved text layer misleads the model, which reads the PDF better unaided."""
         from google.genai import types
 
         parts: list = []
         for i, page in enumerate(pages):
-            parts.append(f"[image {i} = page {page.index + 1}]")
-            parts.append(types.Part.from_bytes(data=page.png, mime_type="image/png"))
-            if not include_text:
-                continue
-            if page.text_incomplete:
-                # Scans and PDFs with broken fonts: the text layer misses what the image shows.
-                parts.append(f"[page {page.index + 1}: the text layer is missing or incomplete; read this page from the image]")
-            if not page.is_scanned:
-                parts.append(f"[text layer of page {page.index + 1}, in reading order]\n{page.text[:14000]}")
+            parts.append(f"[document {i} = page {page.index + 1}]")
+            parts.append(types.Part.from_bytes(data=page.pdf, mime_type="application/pdf"))
         return parts
 
     def _generate(self, model: str, contents: list, schema: type[T], attempts: int = 4) -> T:
@@ -180,7 +179,7 @@ class GeminiProvider:
             picks += pages[3::step][:2] + pages[-1:]
         seen: set[int] = set()
         sample = [p for p in picks if not (p.index in seen or seen.add(p.index))]
-        contents = [*self._parts(sample, include_text=False), prompts.PROFILE_PROMPT]
+        contents = [*self._parts(sample), prompts.PROFILE_PROMPT]
         return self._generate(self.settings.gemini_model, contents, DocumentProfile)
 
     def extract_chunk(self, primary, lookahead, profile, section_hint, focus=None):

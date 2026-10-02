@@ -211,7 +211,7 @@ export default function DocumentPage() {
   const stats = (job?.stats ?? {}) as Stats;
   const profile = (doc.profile ?? {}) as Record<string, unknown>;
   const isSolutions = doc.kind === "solutions";
-  const stages = isSolutions ? ["rendering", "parsing", "reading pages", "applying"] : ["rendering", "profiling", "extracting", "recovering", "verifying", "saving"];
+  const stages = isSolutions ? ["loading", "parsing", "reading pages", "applying"] : ["loading", "profiling", "extracting", "recovering", "verifying", "saving"];
 
   async function reextract() {
     if (!confirm("Run extraction again? Questions people have edited are kept; pages already read are reused.")) return;

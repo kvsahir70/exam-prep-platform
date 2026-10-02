@@ -24,7 +24,6 @@ class Settings(BaseSettings):
     # per model, so a chain of models multiplies the daily request budget.
     gemini_fallback_models: list[str] = []
     gemini_timeout_seconds: int = 240
-    render_dpi: int = 170
     pages_per_chunk: int = 2
     extraction_concurrency: int = 4
     max_verify_calls: int = 40

@@ -42,7 +42,7 @@ User ── PyqProgress (solved, is_correct, bookmarked) ── Question
 
 | File | Role |
 | --- | --- |
-| `pdf.py` | Render pages (PNG + text layer), crop figures from `[ymin, xmin, ymax, xmax]` 0–1000 boxes |
+| `pdf.py` | Cut pages into one-page PDFs (what the model reads), read the text layer for the key parser, crop figures from `[ymin, xmin, ymax, xmax]` 0–1000 boxes |
 | `schemas.py` | Pydantic contracts used as Gemini `response_schema` (structured output) |
 | `prompts.py` | Profile, chunk-extraction and verification prompts |
 | `providers.py` | `GeminiProvider` (vision + JSON, retries with backoff) and offline `HeuristicProvider` |

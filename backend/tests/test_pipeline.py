@@ -68,7 +68,7 @@ def test_windows_recovery_verification_and_figures(sample_pdf):
     assert sorted(model.verified) == ["1", "2", "3"] and questions[0].q.confidence == 0.97
     assert questions[0].figures[0].box_2d == [120, 100, 380, 600]
     assert stats["chunk_errors"] == [] and stats["unprocessed_pages"] == []
-    assert stages[0] == "rendering" and "recovering" in stages and "verifying" in stages
+    assert stages[0] == "loading" and "recovering" in stages and "verifying" in stages
 
 
 def test_failed_window_is_retried(sample_pdf):

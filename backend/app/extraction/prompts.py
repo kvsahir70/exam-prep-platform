@@ -1,6 +1,6 @@
 PROFILE_PROMPT = """\
 You are analysing an exam paper / test series PDF before question extraction.
-You are given the first pages and a sample of later pages (each image is labelled with its page number).
+You are given the first pages and a sample of later pages, each as a one-page PDF labelled with its page number.
 
 Work out the FORMAT of this document so a later step can extract every question accurately:
 - document_type: a question paper (questions, maybe with answers), or only solutions / an answer key;
@@ -31,7 +31,7 @@ into the JSON schema, with perfect fidelity.
 Document profile (inferred earlier, may be imperfect):
 {profile}
 
-Images in this request:
+Pages in this request (each is a one-page PDF):
 {page_legend}
 
 """ + _FIDELITY_RULES + """
@@ -40,8 +40,8 @@ Rules:
    of a question that began earlier, emit it with continues_from_previous_page=true and only the text
    you can see. Use the LOOKAHEAD page solely to finish a question that runs past the last primary page;
    never emit questions that start on the lookahead page.
-2. Follow true reading order. For two-column layouts read the full left column, then the right column.
-   The text layer below each image is already in reading order; the image is authoritative.
+2. Follow true reading order. For two-column layouts read the full left column, then the right column,
+   and keep each question with its own options: never pair a stem with options from the other column.
 3. A question is a numbered item in the paper's question sequence. Numbered statements, list items,
    pairs, assertion/reason lines and table rows INSIDE a question ("1. Norway", "2. Sweden", "Statement-I")
    belong to that question's stem: write them as lines of the stem, never as separate questions.
@@ -62,7 +62,7 @@ Rules:
 10. If a page is an answer key or solutions page, put each entry in answer_key (number, section if the key
     is split by section, answer labels as printed, numerical answer, verbatim explanation).
 11. Figures: for every diagram, graph, map, circuit, structure or image that is part of a question or
-    option, give a tight box_2d [ymin, xmin, ymax, xmax] on 0-1000 scale for the image it is on
+    option, give a tight box_2d [ymin, xmin, ymax, xmax] on the 0-1000 scale of the page it is on
     (page_offset). Do not box plain text.
 12. section: the section heading in force for the question (carry it over from the profile or an earlier
     heading: {section_hint}). Use the exact heading text. year: only if printed with the question.
@@ -81,7 +81,7 @@ SOLUTIONS_PROMPT = """\
 You are transcribing the ANSWER KEY / SOLUTIONS pages of an exam paper. Return one entry per question
 whose answer or explanation STARTS on a primary page.
 
-Images in this request:
+Pages in this request (each is a one-page PDF):
 {page_legend}
 
 """ + _FIDELITY_RULES + """
@@ -95,11 +95,11 @@ Rules:
 4. If the first primary page begins with the end of an explanation that started earlier, ignore it.
 5. Ignore page headers, footers, watermarks and advertisements. Keep everything the paper prints as part
    of a question's solution, including boxes such as "Knowledge Box", "Relevance" or "Source".
-6. page_offset: index of the image where the entry starts.
+6. page_offset: index of the page where the entry starts.
 {wanted}"""
 
 VERIFY_PROMPT = """\
-You are auditing an automatically extracted exam question against the original page images.
+You are auditing an automatically extracted exam question against its original pages (one-page PDFs).
 
 Extracted question (JSON):
 {question}
@@ -107,10 +107,10 @@ Extracted question (JSON):
 Problems detected by the validator:
 {issues}
 
-Compare carefully with the images and return the corrected question in the same schema. Fix any
+Compare carefully with the pages and return the corrected question in the same schema. Fix any
 transcription mistakes, missing or merged options, wrong option labels, broken LaTeX, missing figures
 (add box_2d for them), numbered statements that are missing from the stem, and a wrong question_type.
 Fill answer/explanation only if they are printed on these pages. Never invent, solve or translate.
 If the extraction is already correct, return it unchanged. Set confidence to reflect the final result.
-Image legend: {page_legend}
+Page legend: {page_legend}
 """

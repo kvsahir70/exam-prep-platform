@@ -49,7 +49,7 @@ from app.extraction.merge import (
     revalidate,
     validate_question,
 )
-from app.extraction.pdf import PageContent, crop_figure, render_pages
+from app.extraction.pdf import PageContent, crop_figure, load_pages
 from app.extraction.providers import ExtractionProvider, HeuristicProvider, QuotaExhausted, build_provider
 from app.extraction.schemas import AnswerKeyEntry, ChunkExtraction, DocumentProfile
 from app.models import (
@@ -141,8 +141,8 @@ def extract_document(
 ) -> tuple[DocumentProfile, list[MergedQuestion], dict]:
     t0 = time.monotonic()
     cache = cache or ChunkCache(None)
-    progress("rendering", 0.02)
-    pages = render_pages(pdf_path, settings.render_dpi)
+    progress("loading", 0.02)
+    pages = load_pages(pdf_path)
     stats: dict = {
         "provider": provider.name,
         "pages": len(pages),
@@ -364,8 +364,8 @@ def extract_solutions_document(
 ) -> tuple[list[dict], dict]:
     t0 = time.monotonic()
     cache = cache or ChunkCache(None)
-    progress("rendering", 0.05)
-    pages = render_pages(pdf_path, settings.render_dpi)
+    progress("loading", 0.05)
+    pages = load_pages(pdf_path)
     incomplete = {p.index for p in pages if p.text_incomplete}
     stats: dict = {"provider": provider.name, "pages": len(pages), "incomplete_text_pages": sorted(i + 1 for i in incomplete)}
 
