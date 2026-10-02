@@ -1,8 +1,9 @@
 "use client";
 
 import clsx from "clsx";
-import { Bookmark, BookOpenCheck, CheckCircle2, ChevronLeft, ChevronRight, Search, Trash2, XCircle } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ArrowRight, Bookmark, BookOpenCheck, CheckCircle2, ChevronLeft, ChevronRight, Library, Search, Trash2, XCircle } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 
 import { EditQuestionButton } from "@/components/QuestionEditor";
 import { formatAnswer, QuestionView, type Response } from "@/components/QuestionView";
@@ -138,14 +139,25 @@ function PyqCard({
   );
 }
 
-export default function PyqPage() {
-  const [filters, setFilters] = useState({ subject: "", year: "", status: "", q: "" });
-  const [search, setSearch] = useState("");
+function PyqLibrary({
+  scope,
+  initialSearch,
+  onBack,
+}: {
+  scope: Scope;
+  initialSearch: string;
+  onBack: () => void;
+}) {
+  const [filters, setFilters] = useState({ subject: "", year: "", status: "", q: initialSearch });
+  const [search, setSearch] = useState(initialSearch);
   const [page, setPage] = useState(1);
-  const { data: meta } = useApi<{ subjects: string[]; years: number[] }>("/api/pyq/filters");
-  const { data: stats, reload: reloadStats } = useApi<PyqStats>("/api/pyq/stats");
+  const scopeQs = scopeParams(scope);
+  const { data: meta } = useApi<{ subjects: string[]; years: number[] }>(`/api/pyq/filters?${scopeQs}`);
+  const { data: stats, reload: reloadStats } = useApi<PyqStats>(`/api/pyq/stats?${scopeQs}`);
 
-  const qs = new URLSearchParams({ page: String(page), page_size: "10" });
+  const qs = new URLSearchParams(scopeQs);
+  qs.set("page", String(page));
+  qs.set("page_size", "10");
   Object.entries(filters).forEach(([k, v]) => v && qs.set(k, v));
   const { data, loading, setData, reload } = useApi<{ total: number; items: PyqItem[] }>(`/api/pyq?${qs}`);
   const [failed, setFailed] = useState<string | null>(null);
@@ -166,7 +178,20 @@ export default function PyqPage() {
 
   return (
     <>
-      <PageHeader title="PYQ bank" subtitle="Previous-year questions from every uploaded paper." />
+      <button
+        onClick={onBack}
+        className="i-nav mb-4 inline-flex items-center gap-1.5 rounded-lg text-[13px] font-semibold text-brand"
+      >
+        <ChevronLeft className="h-4 w-4" /> All workspaces
+      </button>
+      <PageHeader
+        title={scope.name}
+        subtitle={
+          scope.kind === "all"
+            ? "Previous-year questions from every workspace."
+            : "Previous-year questions in this workspace."
+        }
+      />
       {failed && <ErrorNote message={failed} />}
 
       {stats && (
@@ -279,5 +304,165 @@ export default function PyqPage() {
         <EmptyState icon={<BookOpenCheck className="h-5 w-5" />} title="No questions match" body="Try a different filter, or ask an admin to upload PYQ papers." />
       )}
     </>
+  );
+}
+
+type Scope =
+  | { kind: "all"; name: string }
+  | { kind: "unassigned"; name: string }
+  | { kind: "exam"; id: number; name: string };
+
+interface Workspace {
+  exam_id: number | null;
+  name: string;
+  unassigned: boolean;
+  total: number;
+  solved: number;
+  correct: number;
+  accuracy: number;
+  year_from: number | null;
+  year_to: number | null;
+  subjects: number;
+}
+
+/** Query string that pins every bank request to the open workspace. */
+function scopeParams(scope: Scope) {
+  if (scope.kind === "unassigned") return "unassigned=true";
+  if (scope.kind === "exam") return `exam_id=${scope.id}`;
+  return "";
+}
+
+function WorkspacePicker({ onOpen }: { onOpen: (value: string) => void }) {
+  const { data, loading } = useApi<Workspace[]>("/api/pyq/workspaces");
+
+  if (loading && !data)
+    return (
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {[0, 1, 2].map((i) => (
+          <Skeleton key={i} className="h-44" />
+        ))}
+      </div>
+    );
+
+  const spaces = data ?? [];
+  const grandTotal = spaces.reduce((a, w) => a + w.total, 0);
+
+  return (
+    <>
+      <PageHeader
+        title="PYQ library"
+        subtitle="Each workspace is an exam. Open one to practise only its previous-year questions."
+      />
+
+      {spaces.length ? (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {spaces.map((w) => {
+              const pct = w.total ? (100 * w.solved) / w.total : 0;
+              const years =
+                w.year_from && w.year_to
+                  ? w.year_from === w.year_to
+                    ? String(w.year_from)
+                    : `${w.year_from} to ${w.year_to}`
+                  : null;
+              return (
+                <button
+                  key={w.exam_id ?? "unassigned"}
+                  onClick={() => onOpen(w.unassigned ? "unsorted" : String(w.exam_id))}
+                  className="i-lift group text-left"
+                >
+                  <Card className="flex h-full flex-col p-5">
+                    <div className="flex items-start gap-3">
+                      <span
+                        className={clsx(
+                          "grid h-11 w-11 shrink-0 place-items-center rounded-xl",
+                          w.unassigned ? "bg-sunken text-muted" : "bg-brand-soft text-brand",
+                        )}
+                      >
+                        <Library className="h-5 w-5" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[17px] font-bold tracking-tight">{w.name}</p>
+                        <p className="mt-0.5 text-xs text-muted">
+                          {[years, `${w.subjects} subject${w.subjects === 1 ? "" : "s"}`].filter(Boolean).join(" \u00b7 ")}
+                        </p>
+                      </div>
+                      <ArrowRight className="h-4 w-4 shrink-0 text-subtle transition-transform group-hover:translate-x-0.5" />
+                    </div>
+
+                    <div className="mt-5">
+                      <div className="mb-1.5 flex items-baseline justify-between">
+                        <span className="text-[22px] font-bold leading-none tabular-nums">
+                          {w.solved}
+                          <span className="text-sm font-medium text-subtle"> / {w.total}</span>
+                        </span>
+                        <span className="text-xs text-subtle">{Math.round(pct)}% solved</span>
+                      </div>
+                      <ProgressBar value={pct} tone="success" />
+                    </div>
+
+                    {w.unassigned && (
+                      <p className="mt-4 text-[11px] leading-snug text-subtle">
+                        Papers uploaded without an exam. Pick an exam when uploading to file them into their own
+                        workspace.
+                      </p>
+                    )}
+                  </Card>
+                </button>
+              );
+            })}
+          </div>
+
+          {spaces.length > 1 && (
+            <button
+              onClick={() => onOpen("all")}
+              className="i-nav mt-5 inline-flex items-center gap-1.5 rounded-lg text-[13px] font-semibold text-brand"
+            >
+              Browse all {grandTotal} questions across workspaces <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </>
+      ) : (
+        <EmptyState
+          icon={<Library className="h-5 w-5" />}
+          title="No PYQ workspaces yet"
+          body="Upload a previous-year paper and pick its exam, and it becomes a workspace here."
+        />
+      )}
+    </>
+  );
+}
+
+function PyqBody() {
+  const router = useRouter();
+  const params = useSearchParams();
+  const exam = params.get("exam");
+  const search = params.get("q") ?? "";
+  const { data: spaces } = useApi<Workspace[]>("/api/pyq/workspaces");
+
+  const open = (value: string) => router.push(`/pyq?exam=${value}`);
+  const back = () => router.push("/pyq");
+
+  // A global search with no workspace chosen looks across all of them.
+  if (!exam && !search) return <WorkspacePicker onOpen={open} />;
+
+  let scope: Scope;
+  if (!exam || exam === "all") scope = { kind: "all", name: "All PYQs" };
+  else if (exam === "unsorted") scope = { kind: "unassigned", name: "Unsorted" };
+  else {
+    const id = Number(exam);
+    const match = spaces?.find((w) => w.exam_id === id);
+    scope = { kind: "exam", id, name: match?.name ?? "Workspace" };
+  }
+
+  return <PyqLibrary key={exam ?? "search"} scope={scope} initialSearch={search} onBack={back} />;
+}
+
+export default function PyqPage() {
+  // useSearchParams needs a Suspense boundary during prerender.
+  return (
+    <Suspense fallback={<Skeleton className="h-96" />}>
+      <PyqBody />
+    </Suspense>
   );
 }

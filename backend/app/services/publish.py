@@ -49,13 +49,16 @@ def sync_test(db: Session, doc: Document, questions: list[Question]) -> Test:
             created_by=doc.uploaded_by,
             is_published=True,
         )
-        if profile.get("duration_minutes"):
-            test.duration_minutes = int(profile["duration_minutes"])
-        if profile.get("marks_correct"):
-            test.marks_correct = float(profile["marks_correct"])
-        if profile.get("marks_incorrect") is not None:
+        duration = doc.duration_minutes or profile.get("duration_minutes")
+        if duration:
+            test.duration_minutes = int(duration)
+        correct = doc.marks_correct if doc.marks_correct is not None else profile.get("marks_correct")
+        if correct:
+            test.marks_correct = float(correct)
+        incorrect = doc.marks_incorrect if doc.marks_incorrect is not None else profile.get("marks_incorrect")
+        if incorrect is not None:
             # Papers print the penalty either way ("-0.66" or "0.66 deducted"); store it as negative.
-            test.marks_incorrect = -abs(float(profile["marks_incorrect"]))
+            test.marks_incorrect = -abs(float(incorrect))
         db.add(test)
         db.flush()
 

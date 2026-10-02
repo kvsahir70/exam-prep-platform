@@ -103,6 +103,10 @@ export interface DocumentInfo {
   year: number | null;
   page_count: number;
   profile: Record<string, unknown> | null;
+  /** Marking scheme chosen at upload; test series only. */
+  duration_minutes: number | null;
+  marks_correct: number | null;
+  marks_incorrect: number | null;
   created_at: string;
   latest_job: Job | null;
   question_counts: Record<string, number>;
@@ -305,6 +309,40 @@ export interface Dashboard {
   recent: Dashboard["trend"];
   pyq: PyqStats;
 }
+export interface Mistake {
+  id: number;
+  question_id: number;
+  attempt_id: number;
+  test_id: number;
+  test_title: string;
+  attempted_at: string | null;
+  section: string;
+  subject: string | null;
+  topic: string | null;
+  number: string;
+  type: QuestionType;
+  text: string;
+  options: Option[];
+  images: Figure[];
+  response: string[] | string | null;
+  answer: Answer;
+  explanation: string | null;
+  marks_awarded: number;
+  time_spent_seconds: number;
+}
+export interface MistakeBook {
+  total: number;
+  items: Mistake[];
+  tests: { id: number; title: string }[];
+  sections: string[];
+}
+export interface ExamTarget {
+  id: number;
+  name: string;
+  /** YYYY-MM-DD; the countdown runs to local midnight of this day. */
+  target_date: string;
+}
+
 export interface AttemptSummary {
   id: number;
   test_id: number;

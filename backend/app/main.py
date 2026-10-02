@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 
 from app import storage
-from app.api import auth, dashboard, documents, pyq, tests
+from app.api import auth, dashboard, documents, mistakes, pyq, tests
 from app.config import get_settings
 from app.db import Base, SessionLocal, add_missing_columns, engine
 from app.models import Role, User
@@ -55,7 +55,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-for module in (auth, documents, tests, pyq, dashboard):
+for module in (auth, documents, tests, pyq, dashboard, mistakes):
     app.include_router(module.router)
 app.mount("/files", StaticFiles(directory=storage.public_dir()), name="files")
 

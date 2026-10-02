@@ -12,6 +12,7 @@ import {
   Menu,
   Moon,
   MoreHorizontal,
+  NotebookPen,
   Search,
   Sparkles,
   Sun,
@@ -32,6 +33,7 @@ type NavItem = { href: string; label: string; icon: typeof LayoutGrid; badge?: s
 const NAV: NavItem[] = [
   { href: "/dashboard", label: "Overview", icon: LayoutGrid },
   { href: "/tests", label: "My tests", icon: FileText },
+  { href: "/mistakes", label: "Mistake book", icon: NotebookPen },
   { href: "/history", label: "Analysis", icon: LineChart },
   { href: "/pyq", label: "PYQ library", icon: BookOpen, badge: "NEW" },
 ];
@@ -89,7 +91,7 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-function HelpCard() {
+function HelpCard({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="rounded-2xl bg-brand-soft p-4">
       <span className="grid h-9 w-9 place-items-center rounded-xl bg-elev text-brand shadow-sm">
@@ -100,7 +102,8 @@ function HelpCard() {
         Explore our quick guide to get the most out of ExamForge.
       </p>
       <Link
-        href="/tests"
+        href="/guide"
+        onClick={onNavigate}
         className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-semibold text-brand transition-all hover:gap-2.5"
       >
         View guide <span aria-hidden>&rarr;</span>
@@ -187,7 +190,7 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
         <NavList onNavigate={onNavigate} />
       </div>
       <div className="space-y-4 pt-4">
-        <HelpCard />
+        <HelpCard onNavigate={onNavigate} />
         <UserRow />
       </div>
     </>

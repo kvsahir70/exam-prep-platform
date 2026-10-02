@@ -13,6 +13,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { ExamCountdown } from "@/components/ExamCountdown";
 import { Card, Skeleton } from "@/components/ui";
 import type { Dashboard } from "@/lib/api";
 import { formatDate, useApi } from "@/lib/hooks";
@@ -366,8 +367,10 @@ export default function DashboardPage() {
         </Card>
       </div>
 
+      <ExamCountdown />
+
       {/* hero row */}
-      <div className="mt-7 grid gap-5 lg:grid-cols-[1.55fr_1fr]">
+      <div className="mt-5 grid gap-5 lg:grid-cols-[1.55fr_1fr]">
         <PracticeActivity data={data} />
         <ContinueCard data={data} />
       </div>

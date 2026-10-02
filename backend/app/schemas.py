@@ -75,6 +75,9 @@ class DocumentOut(ORM):
     profile: dict | None
     created_at: datetime
     solutions_for_id: int | None = None
+    duration_minutes: int | None = None
+    marks_correct: float | None = None
+    marks_incorrect: float | None = None
     latest_job: JobOut | None = None
     question_counts: dict[str, int] = {}
     # Linked solution/answer-key documents, and the test this paper was published as.

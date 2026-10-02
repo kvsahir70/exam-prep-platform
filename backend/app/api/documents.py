@@ -126,6 +126,9 @@ async def upload_document(
     institution: str | None = Form(None),
     year: int | None = Form(None),
     solutions_for: int | None = Form(None, description="For kind=solutions: id of the question paper"),
+    duration_minutes: int | None = Form(None, description="Test series only: minutes allowed"),
+    marks_correct: float | None = Form(None, description="Test series only: marks per correct answer"),
+    marks_incorrect: float | None = Form(None, description="Test series only: penalty, stored negative"),
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
@@ -136,6 +139,16 @@ async def upload_document(
         raise HTTPException(400, "File is not a PDF")
     if exam_id is not None and db.get(Exam, exam_id) is None:
         raise HTTPException(404, "Exam not found")
+    if kind is DocumentKind.test_series:
+        if duration_minutes is not None and not 1 <= duration_minutes <= 1440:
+            raise HTTPException(422, "Duration must be between 1 and 1440 minutes")
+        if marks_correct is not None and not 0 < marks_correct <= 100:
+            raise HTTPException(422, "Marks per question must be between 0 and 100")
+        if marks_incorrect is not None and abs(marks_incorrect) > 100:
+            raise HTTPException(422, "Negative marks must be between 0 and 100")
+    else:
+        # A marking scheme only means something for a test series.
+        duration_minutes = marks_correct = marks_incorrect = None
     paper = None
     if kind == DocumentKind.solutions:
         paper = db.get(Document, solutions_for) if solutions_for else guess_paper(db, title or file.filename or "")
@@ -166,6 +179,10 @@ async def upload_document(
         page_count=pages,
         uploaded_by=admin.id,
         solutions_for_id=paper.id if paper else None,
+        duration_minutes=duration_minutes,
+        marks_correct=marks_correct,
+        # Papers phrase the penalty either way; store it negative so grading can just add it.
+        marks_incorrect=None if marks_incorrect is None else -abs(marks_incorrect),
     )
     db.add(doc)
     db.flush()
