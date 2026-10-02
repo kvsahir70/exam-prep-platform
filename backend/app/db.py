@@ -1,6 +1,6 @@
 from collections.abc import Iterator
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import get_settings
@@ -14,6 +14,16 @@ _settings = get_settings()
 _connect_args = {"check_same_thread": False} if _settings.database_url.startswith("sqlite") else {}
 engine = create_engine(_settings.database_url, pool_pre_ping=True, connect_args=_connect_args)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
+if engine.dialect.name == "sqlite":
+    # SQLite ignores foreign keys unless asked, per connection. Without this, `ON DELETE CASCADE`
+    # is silently a no-op: deleting a test or a document would leave orphaned attempts, answers and
+    # questions behind, which Postgres would have removed.
+    @event.listens_for(engine, "connect")
+    def _enforce_foreign_keys(dbapi_connection, _record):  # pragma: no cover - driver level
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 
 def get_db() -> Iterator[Session]:

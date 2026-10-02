@@ -131,3 +131,89 @@ def test_students_cannot_use_admin_endpoints(client):
     student = _student(client, "nosy@test.dev")
     assert client.get("/api/documents", headers=student).status_code == 403
     assert client.get("/api/documents").status_code == 401
+
+
+def test_delete_test_series_removes_attempts_with_it(client, admin_headers, sample_pdf):
+    """Deleting a test takes its questions-in-test and everyone's attempts with it (FK cascade)."""
+    from sqlalchemy import func, select
+
+    from app.db import SessionLocal
+    from app.models import Attempt, AttemptAnswer, TestQuestion
+
+    doc = _upload(client, admin_headers, sample_pdf)
+    test_id = client.get(f"/api/documents/{doc['id']}", headers=admin_headers).json()["test_id"]
+    student = _student(client, "deleted-test@test.dev")
+    attempt_id = client.post(f"/api/tests/{test_id}/start", headers=student).json()["attempt_id"]
+    qid = client.get(f"/api/attempts/{attempt_id}", headers=student).json()["questions"][0]["question_id"]
+    client.put(f"/api/attempts/{attempt_id}/answers/{qid}", json={"response": ["B"]}, headers=student)
+
+    # Students cannot delete a test; admins can.
+    assert client.delete(f"/api/tests/{test_id}", headers=student).status_code == 403
+    assert client.delete(f"/api/tests/{test_id}", headers=admin_headers).status_code == 204
+
+    assert client.get(f"/api/tests/{test_id}", headers=admin_headers).status_code == 404
+    assert not any(t["id"] == test_id for t in client.get("/api/tests", headers=student).json())
+    assert client.get(f"/api/attempts/{attempt_id}", headers=student).status_code == 404
+    assert client.delete(f"/api/tests/{test_id}", headers=admin_headers).status_code == 404
+
+    with SessionLocal() as db:
+        count = lambda model, col: db.scalar(select(func.count()).select_from(model).where(col == test_id))
+        assert count(TestQuestion, TestQuestion.test_id) == 0
+        assert count(Attempt, Attempt.test_id) == 0
+        # The answer rows went with the attempt, rather than being left dangling.
+        assert db.scalar(
+            select(func.count()).select_from(AttemptAnswer).where(AttemptAnswer.attempt_id == attempt_id)
+        ) == 0
+
+    # The source document and its questions are untouched: the test can be published again.
+    assert client.get(f"/api/documents/{doc['id']}", headers=admin_headers).status_code == 200
+    assert len(client.get(f"/api/documents/{doc['id']}/questions", headers=admin_headers).json()) == 4
+
+
+def test_delete_pyq_question_removes_it_from_the_bank(client, admin_headers, sample_pdf):
+    doc = _upload(client, admin_headers, sample_pdf, kind="pyq", year=2019)
+    student = _student(client, "deleted-pyq@test.dev")
+    bank = client.get("/api/pyq?year=2019", headers=student).json()
+    assert bank["total"] == 4
+    qid = bank["items"][0]["id"]
+    before = client.get("/api/pyq/stats", headers=student).json()["total"]  # the bank holds other papers too
+
+    assert client.delete(f"/api/pyq/{qid}", headers=student).status_code == 403
+    assert client.delete(f"/api/pyq/{qid}", headers=admin_headers).status_code == 204
+
+    after = client.get("/api/pyq?year=2019", headers=student).json()
+    assert after["total"] == 3 and all(i["id"] != qid for i in after["items"])
+    assert client.get("/api/pyq/stats", headers=student).json()["total"] == before - 1
+    # Gone from the bank, so it can no longer be answered or removed twice.
+    assert client.post(f"/api/pyq/{qid}/answer", json={"response": ["B"]}, headers=student).status_code == 404
+    assert client.delete(f"/api/pyq/{qid}", headers=admin_headers).status_code == 404
+
+    # It is rejected, not deleted: re-extracting the paper must not bring it back.
+    client.post(f"/api/documents/{doc['id']}/reextract", headers=admin_headers)
+    process(claim_next())
+    assert client.get("/api/pyq?year=2019", headers=student).json()["total"] == 3
+    rows = client.get(f"/api/documents/{doc['id']}/questions", headers=admin_headers).json()
+    assert next(q for q in rows if q["id"] == qid)["review_status"] == "rejected"
+
+
+def test_delete_document_takes_its_jobs_and_questions(client, admin_headers, sample_pdf):
+    """Deleting a document removes its jobs, questions and test, and leaves nothing dangling."""
+    from sqlalchemy import func, select
+
+    from app.db import SessionLocal
+    from app.models import ExtractionJob, Question, Test
+
+    doc = _upload(client, admin_headers, sample_pdf)
+    doc_id = doc["id"]
+    test_id = client.get(f"/api/documents/{doc_id}", headers=admin_headers).json()["test_id"]
+
+    assert client.delete(f"/api/documents/{doc_id}", headers=admin_headers).status_code == 204
+    assert client.get(f"/api/documents/{doc_id}", headers=admin_headers).status_code == 404
+
+    with SessionLocal() as db:
+        n = lambda model, col: db.scalar(select(func.count()).select_from(model).where(col == doc_id))
+        assert n(ExtractionJob, ExtractionJob.document_id) == 0
+        assert n(Question, Question.document_id) == 0
+        # tests.document_id is ON DELETE SET NULL, so the test row survives but is detached.
+        test = db.get(Test, test_id)
+        assert test is not None and test.document_id is None

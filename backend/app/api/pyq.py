@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import Document, DocumentKind, PyqProgress, Question, ReviewStatus, User
 from app.schemas import PyqAnswerIn
-from app.security import current_user
+from app.security import current_user, require_admin
 from app.services.grading import is_correct
 
 router = APIRouter(prefix="/api/pyq", tags=["pyq"])
@@ -146,6 +146,21 @@ def answer(question_id: int, body: PyqAnswerIn, db: Session = Depends(get_db), u
     p.last_response = body.response
     db.commit()
     return _public(question, p, reveal=True)
+
+
+@router.delete("/{question_id}", status_code=204)
+def remove_from_bank(question_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    """Take one question out of the PYQ bank.
+
+    The row is kept and marked `rejected` rather than deleted: re-extracting the paper re-inserts every
+    question it finds, so a hard delete would silently come back (see `services/publish.py`). Rejected is
+    the one state publishing never overrides, and it keeps each person's progress for the question in
+    case an admin puts it back."""
+    question = db.scalar(_bank().where(Question.id == question_id))
+    if question is None:
+        raise HTTPException(404, "Question not found")
+    question.review_status = ReviewStatus.rejected
+    db.commit()
 
 
 @router.post("/{question_id}/bookmark")

@@ -1,14 +1,15 @@
 "use client";
 
 import clsx from "clsx";
-import { Bookmark, BookOpenCheck, CheckCircle2, ChevronLeft, ChevronRight, Search, XCircle } from "lucide-react";
+import { Bookmark, BookOpenCheck, CheckCircle2, ChevronLeft, ChevronRight, Search, Trash2, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { EditQuestionButton } from "@/components/QuestionEditor";
 import { formatAnswer, QuestionView, type Response } from "@/components/QuestionView";
 import { RichText } from "@/components/RichText";
-import { Badge, Button, Card, EmptyState, Input, PageHeader, ProgressBar, Reveal, Select, Skeleton } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, ErrorNote, Input, PageHeader, ProgressBar, Reveal, Select, Skeleton } from "@/components/ui";
 import { api, type PyqItem, type PyqStats } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { useApi } from "@/lib/hooks";
 
 const STATUSES = [
@@ -19,9 +20,21 @@ const STATUSES = [
   ["bookmarked", "Bookmarked"],
 ] as const;
 
-function PyqCard({ item, onChange }: { item: PyqItem; onChange: (i: PyqItem) => void }) {
+function PyqCard({
+  item,
+  onChange,
+  onRemoved,
+  onError,
+}: {
+  item: PyqItem;
+  onChange: (i: PyqItem) => void;
+  onRemoved: () => void;
+  onError: (message: string) => void;
+}) {
+  const { user } = useAuth();
   const [response, setResponse] = useState<Response>(item.progress?.last_response ?? null);
   const [busy, setBusy] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const solved = !!item.progress?.solved;
   const [reveal, setReveal] = useState(solved);
 
@@ -39,6 +52,18 @@ function PyqCard({ item, onChange }: { item: PyqItem; onChange: (i: PyqItem) => 
   async function bookmark() {
     const { bookmarked } = await api<{ bookmarked: boolean }>(`/api/pyq/${item.id}/bookmark`, { method: "POST" });
     onChange({ ...item, progress: { ...(item.progress ?? { solved: false, is_correct: null, attempts: 0, last_response: null }), bookmarked } });
+  }
+
+  async function remove() {
+    if (!confirm("Remove this question from the PYQ bank? It stays on the uploaded paper and can be restored from the admin review page.")) return;
+    setRemoving(true);
+    try {
+      await api(`/api/pyq/${item.id}`, { method: "DELETE" });
+      onRemoved();
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e));
+      setRemoving(false);
+    }
   }
 
   const result = item.progress?.is_correct;
@@ -61,6 +86,17 @@ function PyqCard({ item, onChange }: { item: PyqItem; onChange: (i: PyqItem) => 
         >
           <Bookmark className="h-4 w-4" fill={item.progress?.bookmarked ? "currentColor" : "none"} />
         </button>
+        {user?.role === "admin" && (
+          <button
+            onClick={remove}
+            disabled={removing}
+            aria-label="Remove from PYQ bank"
+            title="Remove from PYQ bank"
+            className="grid h-8 w-8 place-items-center rounded-lg text-subtle transition hover:bg-sunken hover:text-danger disabled:opacity-50"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
       </div>
       <QuestionView
         type={item.type}
@@ -111,7 +147,8 @@ export default function PyqPage() {
 
   const qs = new URLSearchParams({ page: String(page), page_size: "10" });
   Object.entries(filters).forEach(([k, v]) => v && qs.set(k, v));
-  const { data, loading, setData } = useApi<{ total: number; items: PyqItem[] }>(`/api/pyq?${qs}`);
+  const { data, loading, setData, reload } = useApi<{ total: number; items: PyqItem[] }>(`/api/pyq?${qs}`);
+  const [failed, setFailed] = useState<string | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -130,6 +167,7 @@ export default function PyqPage() {
   return (
     <>
       <PageHeader title="PYQ bank" subtitle="Previous-year questions from every uploaded paper." />
+      {failed && <ErrorNote message={failed} />}
 
       {stats && (
         <Reveal>
@@ -207,8 +245,17 @@ export default function PyqPage() {
             <Reveal key={item.id} delay={Math.min(i, 4) * 0.04}>
               <PyqCard
                 item={item}
+                onError={setFailed}
                 onChange={(next) => {
                   setData((d) => (d ? { ...d, items: d.items.map((x) => (x.id === next.id ? next : x)) } : d));
+                  void reloadStats();
+                }}
+                onRemoved={() => {
+                  setFailed(null);
+                  // Refetch rather than only splicing: the page is server-paginated, so dropping a row
+                  // locally would leave a short page (and an empty one on the last page).
+                  if (data && data.items.length === 1 && page > 1) setPage(page - 1);
+                  else reload();
                   void reloadStats();
                 }}
               />

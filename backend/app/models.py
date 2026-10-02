@@ -127,7 +127,11 @@ class Document(Base):
 
     exam: Mapped[Exam | None] = relationship()
     institution: Mapped[Institution | None] = relationship()
-    jobs: Mapped[list["ExtractionJob"]] = relationship(back_populates="document", order_by="ExtractionJob.id")
+    # `passive_deletes` leaves the cascade to the database (`extraction_jobs.document_id` is NOT NULL,
+    # so the ORM's default of nulling it out on delete would fail).
+    jobs: Mapped[list["ExtractionJob"]] = relationship(
+        back_populates="document", order_by="ExtractionJob.id", cascade="all, delete-orphan", passive_deletes=True
+    )
     solutions_for: Mapped["Document | None"] = relationship(remote_side="Document.id", foreign_keys=[solutions_for_id])
 
 
