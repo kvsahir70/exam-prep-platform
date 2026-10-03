@@ -366,8 +366,8 @@ function UploadDialog({
                   label="Solutions for"
                   hint={
                     papers.length
-                      ? "Only papers that finished extracting are listed. Answers are attached to their questions."
-                      : "No extracted papers yet — upload and extract a paper first."
+                      ? "Live papers only: published tests and the PYQ bank. Answers attach to their questions."
+                      : "Nothing to attach to yet — upload a test series or PYQ paper first."
                   }
                 >
                   <Select
@@ -377,8 +377,8 @@ function UploadDialog({
                     <option value="">Match by title automatically</option>
                     {papers.map((p) => (
                       <option key={p.id} value={p.id}>
-                        #{p.id} · {p.title} — {questionTotal(p)} questions
-                        {p.year ? `, ${p.year}` : ""} · {formatDate(p.created_at)}
+                        #{p.id} · {KIND_LABEL[p.kind]} · {p.title} — {questionTotal(p)} questions
+                        {p.year ? `, ${p.year}` : ""}
                       </option>
                     ))}
                   </Select>
@@ -623,13 +623,20 @@ export default function AdminPage() {
 
   const clearList = () => writeClearedIds([...clearedIds, ...shown.map((d) => d.id)]);
 
-  // A solutions PDF is matched against a paper's saved questions, so only papers that finished
-  // extracting and actually produced questions can receive one.
+  /**
+   * Papers an answer key can be attached to.
+   *
+   * A test series counts once it is live as a test — the same list "My tests" shows. Extracting a
+   * paper is not enough: its test can be deleted afterwards, leaving a document nobody can reach.
+   * A PYQ paper never becomes a test, so there it is having questions in the bank that makes it live.
+   */
   const solutionTargets = useMemo(
     () =>
-      all.filter(
-        (d) => d.kind !== "solutions" && d.latest_job?.status === "completed" && questionTotal(d) > 0,
-      ),
+      all.filter((d) => {
+        if (d.kind === "solutions") return false;
+        if (d.kind === "test_series") return d.test_id != null;
+        return questionTotal(d) > 0;
+      }),
     [all],
   );
 
