@@ -76,6 +76,45 @@ def _fragments(page: pymupdf.Page) -> list[_Frag]:
     return out
 
 
+def _table_markdown(table) -> str:
+    """A detected table as a Markdown pipe table, or "" if it is not worth keeping.
+
+    `to_markdown()` is not used: it labels an empty header cell "Col1" and joins wrapped
+    cell text with a literal <br>, which the question renderer escapes and shows verbatim.
+    """
+    rows = [
+        [(cell or "").replace("\n", " ").replace("|", "/").strip() for cell in row]
+        for row in table.extract()
+    ]
+    rows = [r for r in rows if any(r)]
+    if len(rows) < 2 or len(rows[0]) < 2:
+        return ""
+    head, *body = rows
+    out = ["| " + " | ".join(head) + " |", "| " + " | ".join("---" for _ in head) + " |"]
+    out += ["| " + " | ".join(r + [""] * (len(head) - len(r))) + " |" for r in body]
+    return "\n".join(out)
+
+
+def _tables(page: pymupdf.Page) -> list[tuple[pymupdf.Rect, str]]:
+    """Ruled tables on the page, as Markdown.
+
+    Only tables drawn with real lines count (`lines_strict`). Exam papers lay options and
+    two-column text out on an invisible grid, and the looser strategies read those as tables,
+    which would wreck ordinary questions. A paper's matching table is always ruled.
+    """
+    try:
+        found = page.find_tables(strategy="lines_strict").tables
+    except Exception:  # pragma: no cover - a malformed page must not fail the whole extraction
+        return []
+    out = []
+    for table in found:
+        if table.row_count < 2 or table.col_count < 2:
+            continue
+        if md := _table_markdown(table):
+            out.append((pymupdf.Rect(table.bbox), md))
+    return out
+
+
 def _gutter(frags: list[_Frag], width: float) -> float | None:
     """x of the gap between two columns, or None for a single-column page."""
     if len(frags) < 8:
@@ -98,6 +137,11 @@ def reading_order_lines(page: pymupdf.Page) -> list[tuple[str, float]]:
     """(line, vertical position 0-1) in reading order."""
     frags = _fragments(page)
     height = page.rect.height or 1
+    # Swap each ruled table for one fragment holding its Markdown. Without this the table's
+    # rows arrive as loose lines ("Supersonic Cruise" on its own) and the pairing is lost.
+    for rect, md in _tables(page):
+        frags = [f for f in frags if not (rect.x0 - 2 <= (f.x0 + f.x1) / 2 <= rect.x1 + 2 and rect.y0 - 2 <= (f.y0 + f.y1) / 2 <= rect.y1 + 2)]
+        frags.append(_Frag(rect.x0, rect.y0, rect.x1, rect.y1, md))
     gutter = _gutter(frags, page.rect.width)
     if gutter is None:
         return _positioned(frags, height)

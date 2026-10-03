@@ -49,13 +49,35 @@ function table(lines: string[]) {
     .join("")}</tbody></table>`;
 }
 
+/** A line that starts a new numbered, roman or lettered item in a question stem. */
+const NEW_ITEM = /^\s*(?:\(?\d{1,2}\s*[.)]|\(?[ivxIVX]{1,4}\s*[.)]|\([a-hA-H]\))\s/;
+/** A line that closes a sentence, so the next capitalised line is a new one rather than a wrap. */
+const SENTENCE_END = /[.?:;]["')\]]?\s*$/;
+
+/**
+ * Lay a paragraph's lines out again.
+ *
+ * Extracted text keeps the line breaks of the PDF column it came from, which are far narrower than
+ * the card the question is shown in. Rendering every one as <br/> left the right-hand side of the
+ * card empty. Only breaks that carry meaning are kept — a new numbered statement, or a line that
+ * starts a sentence after the previous one ended — and the rest of the lines flow together.
+ */
+function paragraph(lines: string[]) {
+  const out = [inline(lines[0])];
+  for (let i = 1; i < lines.length; i++) {
+    const starts = NEW_ITEM.test(lines[i]) || (SENTENCE_END.test(lines[i - 1]) && /^\s*[A-Z0-9(]/.test(lines[i]));
+    out.push(starts ? "<br/>" : " ", inline(lines[i]));
+  }
+  return out.join("");
+}
+
 /** Tiny Markdown + LaTeX renderer for extracted question text (paragraphs, tables, math, emphasis). */
 export function toHtml(text: string) {
   const blocks: string[] = [];
   const lines = (text ?? "").split("\n");
   let para: string[] = [];
   const flush = () => {
-    if (para.length) blocks.push(`<p>${para.map(inline).join("<br/>")}</p>`);
+    if (para.length) blocks.push(`<p>${paragraph(para)}</p>`);
     para = [];
   };
   for (let i = 0; i < lines.length; i++) {

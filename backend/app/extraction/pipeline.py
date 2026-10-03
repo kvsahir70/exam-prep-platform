@@ -64,8 +64,13 @@ from app.models import (
 
 log = logging.getLogger(__name__)
 Progress = Callable[[str, float], None]
+# Bump when the page text layer changes shape. The cache is keyed on the document hash and the
+# request, so a change in how pages are read would otherwise be invisible to it and a re-extraction
+# would replay stale results. "2" = ruled tables are kept as Markdown instead of being flattened.
+_TEXT_LAYER_VERSION = "2"
 _PROMPT_VERSION = hashlib.sha1(
-    (prompts.CHUNK_PROMPT + prompts.FOCUS_PROMPT + prompts.SOLUTIONS_PROMPT + prompts.PROFILE_PROMPT).encode()
+    (prompts.CHUNK_PROMPT + prompts.FOCUS_PROMPT + prompts.SOLUTIONS_PROMPT + prompts.PROFILE_PROMPT
+     + _TEXT_LAYER_VERSION).encode()
 ).hexdigest()[:10]
 
 
