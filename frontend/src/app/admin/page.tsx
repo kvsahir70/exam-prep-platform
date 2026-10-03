@@ -31,6 +31,13 @@ const KINDS = [
 
 const KIND_LABEL: Record<string, string> = { test_series: "Test series", pyq: "PYQ", solutions: "Solutions" };
 
+/** Questions a document has produced. `flagged` is a marker on other buckets, not a bucket. */
+function questionTotal(doc: DocumentInfo) {
+  return Object.entries(doc.question_counts)
+    .filter(([k]) => k !== "flagged")
+    .reduce((a, [, v]) => a + v, 0);
+}
+
 /* ------------------------------------------------------------------ cleared ids */
 
 /**
@@ -355,7 +362,14 @@ function UploadDialog({
               </Field>
 
               {isSolutions ? (
-                <Field label="Solutions for" hint="Answers and explanations are attached to this paper's questions">
+                <Field
+                  label="Solutions for"
+                  hint={
+                    papers.length
+                      ? "Only papers that finished extracting are listed. Answers are attached to their questions."
+                      : "No extracted papers yet — upload and extract a paper first."
+                  }
+                >
                   <Select
                     value={form.solutions_for}
                     onChange={(e) => setForm({ ...form, solutions_for: e.target.value })}
@@ -363,7 +377,8 @@ function UploadDialog({
                     <option value="">Match by title automatically</option>
                     {papers.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.title}
+                        #{p.id} · {p.title} — {questionTotal(p)} questions
+                        {p.year ? `, ${p.year}` : ""} · {formatDate(p.created_at)}
                       </option>
                     ))}
                   </Select>
@@ -493,9 +508,7 @@ function DocumentRow({
   onClear: () => void;
 }) {
   const job = doc.latest_job;
-  const total = Object.entries(doc.question_counts)
-    .filter(([k]) => k !== "flagged")
-    .reduce((a, [, v]) => a + v, 0);
+  const total = questionTotal(doc);
   const running = job != null && ["queued", "running"].includes(job.status);
   const meta = [doc.exam?.name, doc.institution?.name, doc.year, `${doc.page_count} pages`, formatDate(doc.created_at)]
     .filter(Boolean)
@@ -609,6 +622,16 @@ export default function AdminPage() {
   }, [visibleDocs, kind, search]);
 
   const clearList = () => writeClearedIds([...clearedIds, ...shown.map((d) => d.id)]);
+
+  // A solutions PDF is matched against a paper's saved questions, so only papers that finished
+  // extracting and actually produced questions can receive one.
+  const solutionTargets = useMemo(
+    () =>
+      all.filter(
+        (d) => d.kind !== "solutions" && d.latest_job?.status === "completed" && questionTotal(d) > 0,
+      ),
+    [all],
+  );
 
   const active = all.some((d) => d.latest_job && ["queued", "running"].includes(d.latest_job.status));
   const paperTitle = (id: number | null) => all.find((d) => d.id === id)?.title;
@@ -731,7 +754,7 @@ export default function AdminPage() {
         {uploading && (
           <UploadDialog
             exams={exams ?? []}
-            papers={all.filter((d) => d.kind !== "solutions")}
+            papers={solutionTargets}
             onClose={() => setUploading(false)}
             onDone={reload}
             onExamCreated={reloadExams}
